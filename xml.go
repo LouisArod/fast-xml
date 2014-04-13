@@ -1,33 +1,42 @@
-// Package xml contain tool to create xml files.
+// Package lxml contain tool to generate xml files on the fly.
 package lxml
 
-import "io"
-
-// Predifined Document constantes.
-const (
-	Xml1       = "<?xml version=\"1.0\" encoding=\"utf-8\"?>"
-	SvgDoctype = "<!DOCTYPE svg PUBLIC \"-//W3C//DTD SVG 20010904//EN\" \"http://www.w3.org/TR/2001/REC-SVG-20010904/DTD/svg10.dtd\">"
+import (
+	"bytes"
+	"errors"
+	"io"
 )
 
-// A Document represente the type and encoding of an XML document
-type Document struct {
-	Version string
-	Doctype string
-}
+// Predifined constantes.
+const (
+	XML1     = "<?xml version=\"1.0\" encoding=\"utf-8\"?>"
+	SvgDoc   = "<!DOCTYPE svg PUBLIC \"-//W3C//DTD SVG 20010904//EN\" \"http://www.w3.org/TR/2001/REC-SVG-20010904/DTD/svg10.dtd\">"
+	MaxDepth = 64
+)
+
+// Predifined errors
+var (
+	ErrDepthOverflow = errors.New("lxml.Gen: too deep.")
+)
 
 // A Gen represente an xml generator.
 type Gen struct {
-	Doc Document
+	b      *bytes.Buffer    // Contain the xml
+	opened [MaxDepth]string // Contain the name of the opened elements
+	depth  int8             // Contain the number of opened elements
+	added  bool             // Indicate if the last element has been added or opened
 }
 
 // Create a new Gen with the specified Document type doc.
-func NewGen(doc Document) *Gen {
-	return &Gen{doc}
+func NewGen(version, doctype string) *Gen {
+	return &Gen{b: bytes.NewBufferString(version + "\n" + doctype + "\n")}
 }
 
 // AddNode add a closed node to the generator.
-func (g *Gen) AddNode(name, attr string) {
-
+func (g *Gen) AddNode(name, attr string) (e error) {
+	if g.depth >= MaxDepth {
+		return ErrDepthOverflow
+	}
 }
 
 // AddAttr add an attribute to the last opened node.
