@@ -1,11 +1,12 @@
-// Package xml contain tool to create xml files
-package xml
+// Package xml contain tool to create xml files.
+package lxml
 
-// Predifined Document
+import "io"
+
+// Predifined Document constantes.
 const (
-	SvgDoc = &Document{
-		"<?xml version=\"1.0\" encoding=\"utf-8\"?>",
-		"<!DOCTYPE svg PUBLIC \"-//W3C//DTD SVG 20010904//EN\" \"http://www.w3.org/TR/2001/REC-SVG-20010904/DTD/svg10.dtd\">"}
+	Xml1       = "<?xml version=\"1.0\" encoding=\"utf-8\"?>"
+	SvgDoctype = "<!DOCTYPE svg PUBLIC \"-//W3C//DTD SVG 20010904//EN\" \"http://www.w3.org/TR/2001/REC-SVG-20010904/DTD/svg10.dtd\">"
 )
 
 // A Document represente the type and encoding of an XML document
@@ -58,6 +59,6 @@ func (g *Gen) Read(p []byte) (n int, err error) {
 }
 
 // Write the content of the generator until the end of the document.
-func (g *Gen) WriteTo(w Writer) (n int64, err error) {
+func (g *Gen) WriteTo(w io.Writer) (n int64, err error) {
 	return n, err
 }
