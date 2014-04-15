@@ -1,4 +1,4 @@
-fast-xml
+lxml
 ========
 
 A fast xml generation librairy.
