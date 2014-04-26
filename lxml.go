@@ -5,14 +5,13 @@ import (
 	"bytes"
 	"errors"
 	"io"
-	"strings"
 )
 
 // Predifined constantes.
 const (
 	XML1     = "<?xml version=\"1.0\" encoding=\"utf-8\"?>"
-	SvgDoc   = "<!DOCTYPE svg PUBLIC \"-//W3C//DTD SVG 20010904//EN\" \"http://www.w3.org/TR/2001/REC-SVG-20010904/DTD/svg10.dtd\">"
-	MaxDepth = 64
+	SVGDoc   = "<!DOCTYPE svg PUBLIC \"-//W3C//DTD SVG 1.1//EN\"\n\"http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd\">"
+	MaxDepth = 127
 )
 
 // Predifined errors
@@ -23,7 +22,7 @@ var (
 
 // A Gen represente an xml generator.
 type Gen struct {
-	b      bytes.Buffer     // Contain the xml
+	b      bytes.Buffer     // Contain the opened xml
 	opened [MaxDepth]string // Contain the name of the opened elements
 	depth  int8             // Contain the number of opened elements
 	added  bool             // Indicate if the last element has been added or opened
@@ -44,13 +43,47 @@ func (g *Gen) closeLastNode() (err error) {
 	if g.depth <= 0 {
 		return ErrNothingToClose
 	}
+	g.depth--
 	if g.added {
 		_, err = g.b.WriteString(" /")
 		g.added = false
 	} else {
-		_, err = g.b.WriteString("></" + g.opened[g.depth-1])
+		_, err = g.b.WriteString("></" + g.opened[g.depth])
 	}
-	g.depth--
+	return err
+}
+
+// OpenNode open a new node named name with the attributes
+// contains in attr.
+func (g *Gen) OpenNode(name, attr string) (err error) {
+	if g.depth >= MaxDepth {
+		return ErrDepthOverflow
+	}
+	// Close the previous node if added
+	buf := make([]byte, MaxDepth*4+5)
+
+	n := copy(buf, ">\n")
+	if g.added {
+		if g.depth <= 0 {
+			return ErrNothingToClose
+		}
+		n = copy(buf, " />\n")
+		g.added = false
+		g.depth--
+	}
+	// Add to opened nodes
+	g.opened[g.depth] = name
+	g.depth++
+
+	// Fill the buffer with depth-1 tabs (no tab for the root element)
+	for i, max := 0, int(g.depth-1); i < max; i++ {
+		n += copy(buf[n:], "    ")
+	}
+
+	// Write the node in the buffer
+	g.b.Write(buf[:n])
+	g.b.WriteString("<" + name + " " + attr)
+
 	return err
 }
 
@@ -59,9 +92,6 @@ func (g *Gen) closeLastNode() (err error) {
 // each element without childs.
 func (g *Gen) AddNode(name, attr string) (err error) {
 	err = g.OpenNode(name, attr)
-	if err != nil {
-		return err
-	}
 	g.added = true
 	return err
 }
@@ -77,78 +107,94 @@ func (g *Gen) CloseNode() error {
 		return ErrNothingToClose
 	}
 
-	delim := ">\n"
+	// We allocate a buffer able to contain 4 space for
+	// each opened element + 6 char.
+	buf := make([]byte, MaxDepth*4+6)
+	buf[0], buf[1] = '>', '\n'
+	n := 2
+
+	// We close the previous element if added
 	if g.added {
 		if g.depth <= 1 {
 			return ErrNothingToClose
 		}
-		delim = " />\n"
+		buf[0], buf[1], buf[2], buf[3] = ' ', '/', '>', '\n'
+		n = 4
 		g.depth--
 		g.added = false
 	}
 
-	g.b.WriteString(delim + strings.Repeat("    ", int(g.depth-1)) +
-		"</" + g.opened[g.depth-1])
+	// Fill the buffer with depth-1 tabs (no tab for the root element)
+	for i, max := 0, int(g.depth-1); i < max; i++ {
+		n += copy(buf[n:], "    ")
+	}
+	buf[n], buf[n+1] = '<', '/'
+	n += 2
+
+	g.b.Write(buf[:n])
+	g.b.WriteString(g.opened[g.depth-1])
 	g.depth--
 	return nil
 }
 
-// CloseNamedNode close all the nodes starting from
-// the last opened node until it reach the node matching
-// name.
-func (g *Gen) CloseNamedNode(name string) {
-
-}
-
-// OpenNode open a new node named name with the attributes
-// contains in attr.
-func (g *Gen) OpenNode(name, attr string) (err error) {
-	if g.depth >= MaxDepth {
-		return ErrDepthOverflow
+// CloseNNode close n nodes starting from
+// the last opened node.
+func (g *Gen) CloseNNode(n int) error {
+	if g.depth-int8(n) <= 0 {
+		return ErrNothingToClose
 	}
-	// Close the previous node if added
-	delim := ">\n"
-	if g.added {
-		if g.depth <= 0 {
-			return ErrNothingToClose
-		}
-		delim = " />\n"
-		g.added = false
-		g.depth--
+	for i := 0; i < n; i++ {
+		g.CloseNode()
 	}
-	// Add to opened nodes
-	g.opened[g.depth] = name
-	g.depth++
-
-	// Write the node in the buffer
-	_, err = g.b.WriteString(delim + strings.Repeat("    ", int(g.depth-1)) +
-		"<" + name + " " + attr)
-	return err
+	return nil
 }
 
 // Read read len(p) byte from the generator.
 func (g *Gen) Read(p []byte) (n int, err error) {
-	// If the buffer is smaller than the xml we copy what we can
-	if l := len(p); l < g.b.Len() {
-		n = copy(p, g.b.Bytes()[:l])
+	if g.b.Len() == 0 {
 		return
 	}
+	// We copy the opened XML
 	n = copy(p, g.b.Bytes())
-	var b bytes.Buffer
+	// The slice is already full ? We escape.
+	if l := len(p); l < g.b.Len() {
+		return
+	}
+
+	// We create the closing elements
 	// We handle added element
-	i := g.depth - 1
+	i := int(g.depth - 1)
 	if g.added {
-		_, err = b.WriteString(" /")
+		p[n], p[n+1] = ' ', '/'
+		n += 2
 		i--
 	}
-	// We close all the other element
-	for ; err == nil && i >= 0; i-- {
-		_, err = b.WriteString(">\n" + strings.Repeat("    ", int(i)) + "</" + g.opened[i])
+
+	// We create a string fill with space
+	buf := make([]byte, MaxDepth*4+5)
+	buf[0], buf[1] = '>', '\n'
+	b := 2
+	for j := 0; j < i; j++ {
+		b += copy(buf[b:], "    ")
 	}
+	buf[b], buf[b+1] = '<', '/'
+	b += 2
+	// We close all the other element
+	for ; err == nil && i > 0; i-- {
+		n += copy(p[n:], buf[:b])
+		n += copy(p[n:], g.opened[i])
+		// We prepare the next iteration
+		b -= 4
+		buf = buf[:b]
+		buf[b-2], buf[b-1] = '<', '/'
+	}
+	n += copy(p[n:], buf[:b])
+	n += copy(p[n:], g.opened[i])
+
 	if g.depth > 0 {
-		b.WriteString(">")
-		tmp, err := b.Read(p[n:])
-		return n + tmp, err
+		p[n] = '>'
+		n++
+		return n, err
 	}
 	return
 }
