@@ -56,10 +56,10 @@ func TestNewGen(t *testing.T) {
 			NewGenTest, string(g.xml.Bytes()))
 	}
 	if g.depth != 1 {
-		t.Fatal("Expecting a depth of 1 but got %d", g.depth)
+		t.Fatal("Expecting a depth of 1 but got ", g.depth)
 	}
 	if string(g.opened[g.depth-1]) != "svg" {
-		t.Fatal("Expecting 'svg' in g.opened bug got %s", g.opened[g.depth-1])
+		t.Fatal("Expecting 'svg' in g.opened bug got ", g.opened[g.depth-1])
 
 	}
 }
